@@ -21,23 +21,22 @@ type IRCBot struct {
 }
 
 type Message struct {
-	Author	string
-	Channel	string
-	Content	string
-	Host	string
-	Timestamp	time.Time
-	Type	string
+	Command    string
+	Params     []string
+	Prefix     string
+	Timestamp  time.Time
+	Trail      string
 }
 
 func (msg *Message) PrettyPrint() {
 	if msg == nil {
 		return
 	}
-	log.Println("Author:", msg.Author)
-	log.Println("Host:", msg.Host)
-	log.Println("Type:", msg.Type)
-	log.Println("Channel:", msg.Channel)
-	log.Println("Content:", msg.Content)
+	log.Println(msg.Timestamp.Format("[15:04]"))
+	log.Println("Prefix:\t", msg.Prefix)
+	log.Println("Command:\t", msg.Command)
+	log.Println("Params:\t", msg.Params)
+	log.Println("Trail:\t", msg.Trail)
 }
 
 // Create a new bot with the given server info
@@ -49,7 +48,7 @@ func createBot() *IRCBot {
 	Channel:    "#ircbottestrelam",
 	Pass:       "",
 	Connection: nil,
-	User:       "VoteBot",
+	User:       "IdolBot",
 	}
 }
 
@@ -69,31 +68,47 @@ func parseMessage(bot *IRCBot, line string) *Message {
 	fmt.Println("---")
 	fmt.Println(line)
 	fmt.Println("---")
+
 	fields := strings.Fields(line)
-	fmt.Println(fields)
-
-	// Respond to ping/pong event to avoid ping timeout disconnects
-	if fields[0] == "PING" {
-		response := strings.Replace(line, "PING", "PONG", 1)
-		fmt.Fprintf(bot.Connection, response)
-		fmt.Println("Responded to PING event:", response)
-		return nil
-	}
-
 	var msg Message
 
-	// The author of the message is the first field up to a "!" character, except
-	// for the leading colon
-	msg.Author = (strings.Split(fields[0], "!"))[0][1:]
-	// The author's host is everything else in the first field
-	msg.Host = (strings.Split(fields[0], "!"))[1]
-	// The type of message is the next whitespace-delimited field
-	msg.Type = fields[1]
-	// The channel is the next field
-	msg.Channel = fields[2]
-	// The content is everything else, except the leading colon for the last field
-	msg.Content = string((strings.Join(fields[3:], " "))[1:])
-	msg.Timestamp = time.Now()
+	// Used to isolate the command and parameters
+	var prefixEnd int
+	var trailBegin int
+
+	// Collect the prefix if it exists. The prefix exists iff the first character of the
+	// message is a colon, and the prefix is everything following the colon up to the first
+	// space. Thus the prefix can only exist in the first field.
+	prefix := fields[0]
+	if prefix[0] == ':' {
+		msg.Prefix = prefix[1:]
+		prefixEnd = len(fields[0])
+	} else {
+		msg.Prefix = "" 
+		prefixEnd = -1
+	}
+
+	// Collect the trail if it exists. It is everything after the occurrance of " :", note
+	// the space.
+	trailBegin = strings.Index(line, " :")
+	
+	// Only set the trail if there is a valid one. If " :" is the last part of the message
+	// then there is no character afterward.
+	if trailBegin >= 0 && trailBegin+2 < len(line) {
+		msg.Trail = line[trailBegin+2:]
+	} else {
+		msg.Trail = ""
+	}
+
+	// Collect the command and parameters. They're everything between the prefix and trail.
+	cmdAndParams := strings.Split(line[prefixEnd+1:trailBegin], " ")
+	msg.Command = cmdAndParams[0]
+
+	if len(cmdAndParams) > 1 {
+		msg.Params = cmdAndParams[1:]
+	} else {
+		msg.Params = nil
+	}
 
 	return &msg
 }
@@ -102,7 +117,7 @@ func parseMessage(bot *IRCBot, line string) *Message {
 // performs it
 func doCommand(bot *IRCBot, msg *Message) {
 	// Right now the only command is !test
-	if strings.Fields(msg.Content)[0] == "!test" {
+	if strings.Fields(msg.Trail)[0] == "!test" {
 		s := "PRIVMSG"
 		s += " " + bot.Channel
 		s += " :"
