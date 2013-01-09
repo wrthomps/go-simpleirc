@@ -65,10 +65,6 @@ func (bot *IRCBot) ServerConnect() (connection net.Conn, err error) {
 
 // Parses a line from IRC into a Message struct
 func parseMessage(bot *IRCBot, line string) *Message {
-	fmt.Println("---")
-	fmt.Println(line)
-	fmt.Println("---")
-
 	fields := strings.Fields(line)
 	var msg Message
 
@@ -98,6 +94,8 @@ func parseMessage(bot *IRCBot, line string) *Message {
 		msg.Trail = line[trailBegin+2:]
 	} else {
 		msg.Trail = ""
+		// Set trailBegin to a saner value for the next calculations
+		trailBegin = len(line)
 	}
 
 	// Collect the command and parameters. They're everything between the prefix and trail.
@@ -110,7 +108,19 @@ func parseMessage(bot *IRCBot, line string) *Message {
 		msg.Params = nil
 	}
 
+	msg.Timestamp = time.Now()
+
 	return &msg
+}
+
+func respondToRequest(bot *IRCBot, msg *Message) {
+	responseFunction := CODE_LIST[msg.Command]
+	if responseFunction == nil {
+		log.Println("Unrecognized command")
+		return
+	}
+
+	responseFunction(bot, msg)
 }
 
 // Checks a message to see if the bot should perform some command, and if so,
@@ -139,28 +149,14 @@ func main() {
 	reader := bufio.NewReader(connection)
 	respReq := textproto.NewReader(reader)
 
-	// Wait for the initial overhead messages we don't need to respond to
-	waitChannel := time.After(30 * time.Second)
-	respond := false
 	for {
 		line, err := respReq.ReadLine()
 		if err != nil {
 	  		break
 		}
-
-		select {
-		case _ = <-waitChannel:
-			respond = true
-		default:
-		}
-
-		if respond {
-			msg := parseMessage(bot, line)
-	  		msg.PrettyPrint()
-			doCommand(bot, msg)
-		} else {
-			fmt.Println(line)
-		}
+		log.Println(line)
+		msg := parseMessage(bot, line)
+		respondToRequest(bot, msg)
 	}
 }
 
